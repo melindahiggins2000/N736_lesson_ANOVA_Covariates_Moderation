@@ -1,0 +1,195 @@
+---
+title: "Lesson 17"
+author: "Melinda K. Higgins, PhD."
+date: "October 24, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+## Lesson 17 - Analysis of Covariance (ANCOVA)
+
+In this lesson, we're working with the `HELP` dataset. We will be using these variables:
+
+* `sexrisk` - dependent variable (DV)
+* `mcs` - independent variable (IV)
+* `pss_fr` - continuous covariate (CV)
+* `female` - discrete/categorical covariate (CV)
+
+Load the initial packages `tidyverse` and `haven` and load the HELP dataset.
+
+```{r}
+# load packages
+library(tidyverse)
+library(haven)
+
+# load dataset
+help1 <- haven::read_spss("helpmkh.sav")
+```
+
+Select the variables we want for this lesson: 
+
+* DV: `sexrisk`
+* IV: `mcs`
+* CV: `pss_fr` or `female`
+
+Let's also recode `female` to `male` by flipping the 0,1 and let's mean center `mcs` and `pss_fr` since we'll also look at the interaction between these variables plus the interactions between `mcs` and gender (`female` or `male`).
+
+```{r}
+help2 <- help1 %>%
+  select(sexrisk, mcs, pss_fr, female) %>%
+  mutate(mcsC = mcs - mean(mcs),
+         pss_frC = pss_fr - mean(pss_fr),
+         male = as.numeric((female==0)),
+         mcsC_x_pss_frC = mcsC * pss_frC,
+         mcsC_x_female = mcsC * female,
+         mcsC_x_male = mcsC * male)
+```
+
+## Regression Approach 
+
+Using a regression approach - look at `pss_fr` as a covariate for the relationship between `sexrisk` and `mcs` adjusting for `pss_fr`. Note the use of `*` which computes the interaction for you.
+
+### regression summary
+
+```{r}
+m1 <- lm(sexrisk ~ mcsC * pss_frC, data=help2)
+summary(m1)
+```
+
+### `olsrr` regression summary
+
+```{r}
+library(olsrr)
+ols_regress(m1)
+```
+
+## Using an ANOVA approach
+
+Let's run this again using the `aov()` function. Look at usual `summary()` function and the `ols_regress()` function from the `olsrr` package.
+
+```{r}
+m1aov <- aov(sexrisk ~ mcsC * pss_frC, data=help2)
+summary(m1aov)
+ols_regress(m1aov)
+```
+
+## Effect Plots
+
+Let's also make an effectplot showing the interaction or lack thereof between `mcs` and `pss_fr` for `sexrisk`. For this we will use the `effects` package by John Fox.
+
+```{r}
+library(effects)
+plot(effects::effect("mcsC:pss_frC", m1, 
+            xlevels=list()),
+     multiline=TRUE, ylab="Sex Risk", rug=FALSE)
+```
+
+### adjust the y-axis to more reasonable range
+
+```{r}
+plot(effects::effect("mcsC:pss_frC", m1, 
+            xlevels=list()),
+     multiline=TRUE, ylab="Sex Risk", rug=FALSE,
+     ylim=c(0,8))
+```
+
+## Consider gender as a covariate
+
+Now, let's look at gender as a covariate. First, run for `female` and then run for `male`. Knowing which category is coded as 0 and which is coded as 1 changes the interpretation of the intercept but also changes the interpretation of the main effect of `mcs` which is _**conditional upon**_ gender.
+
+### Model for `female` where male=0 and female=1
+
+```{r}
+m2f <- lm(sexrisk ~ mcsC * female, data=help2)
+summary(m2f)
+ols_regress(m2f)
+```
+
+### Model for `male` where male=1 and female=0
+
+```{r}
+
+m2m <- lm(sexrisk ~ mcsC * male, data=help2)
+summary(m2m)
+ols_regress(m2m)
+```
+
+## Run gender as a covariate using the `aov()` function
+
+### ANCOVA using `female` variable
+
+```{r}
+m2f.aov <- aov(sexrisk ~ mcsC * female, data=help2)
+summary(m2f.aov)
+ols_regress(m2f.aov)
+```
+
+### Check type III SS using Anova() from car package
+
+```{r}
+library(car)
+car::Anova(m2f.aov, type=3)
+```
+
+### ANCOVA using `male` variable
+
+```{r}
+m2m.aov <- aov(sexrisk ~ mcsC * male, data=help2)
+car::Anova(m2m.aov, type=3)
+```
+
+## Other packages for plotting interaction effects
+
+Let's look at a couple more packages for plotting interaction effects:
+
+* `HH` package
+* `ggplot2` package
+* `sjPlot` package
+
+### Using the `HH` package to run `ANCOVA` and associated plot
+
+Note: to use the `ancova()` function in the `HH` package, the categorical variable `female` must be of factor class. So, I created a new variable `femaleF` which is now a `factor` class.
+
+```{r}
+library(HH)
+class(help2$female)
+help2$femaleF <- as.factor(help2$female)
+class(help2$femaleF)
+
+hhaov <- HH::ancova(sexrisk ~ mcsC * femaleF, data=help2)
+# see summary and associated effect plot
+hhaov
+```
+
+### Using the `ggplot2` package to visualize interaction effects
+
+Note: This plot can also be done using `qplot()` from the `ggplot2` package with an overlay of a smooth regression fit line. 
+
+Note: `ggplot2` should already be loaded
+when we loaded the `tidyverse` package above
+
+```{r}
+
+qplot(x=mcsC, y=sexrisk, facets=~female, data=help2) +
+  geom_smooth(method="lm")
+```
+
+### Using the `sjPlot` package to make interaction plots
+
+Learn more about the `sjPlot` pacakge and specifically the `sjp.int()` function at [http://www.strengejacke.de/sjPlot/sjp.int/](http://www.strengejacke.de/sjPlot/sjp.int/)
+
+**NOTICE** `sjPlot` is using the labels from the "codebook" applied and in use when we read the dataset in using the `tidyverse` compatible `haven` package.
+
+```{r}
+library(sjPlot)
+m3f <- lm(sexrisk ~ female * mcsC, data=help2)
+sjPlot::sjp.int(m3f, type="eff",
+        show.ci=TRUE,
+        facet.grid=TRUE)
+```
+
